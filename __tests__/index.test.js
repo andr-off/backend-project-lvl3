@@ -12,75 +12,49 @@ const testPagePath = getFixturePath('testPage.html');
 
 let tempDirPath;
 
+const table = [
+  [
+    'with pathname in url',
+    'https://hexlet.io',
+    '/courses',
+    'hexlet-io-courses.html',
+  ],
+  [
+    'without pathname in url',
+    'https://hexlet.io',
+    '/',
+    'hexlet-io.html',
+  ],
+  [
+    'with pathname and querystring in url',
+    'https://yandex.ru',
+    '/search/?text=node.js',
+    'yandex-ru-search-text-node-js.html',
+  ],
+];
+
 beforeEach(async () => {
   tempDirPath = await fs.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
 });
 
-test('with pathname in url', async () => {
-  const downloadedPageHost = 'https://hexlet.io';
-  const downloadedPagePath = '/courses';
-  const downloadedPageLink = `${downloadedPageHost}${downloadedPagePath}`;
-  const downloadedPageName = 'hexlet-io-courses.html';
-  const downloadedPageFilePath = path.join(tempDirPath, downloadedPageName);
+test.each(table)(
+  '%s',
+  async (testName, downloadedPageHost, downloadedPagePath, downloadedPageName) => {
+    const downloadedPageLink = `${downloadedPageHost}${downloadedPagePath}`;
+    const downloadedPageFilePath = path.join(tempDirPath, downloadedPageName);
+    const testPageContent = await fs.readFile(testPagePath, 'utf-8');
 
-  const testPageContent = await fs.readFile(testPagePath, 'utf-8');
+    nock(downloadedPageHost)
+      .get(downloadedPagePath)
+      .reply(200, testPageContent);
 
-  nock(downloadedPageHost)
-    .get(downloadedPagePath)
-    .reply(200, testPageContent);
+    await downloadPage(downloadedPageLink, tempDirPath);
 
-  await downloadPage(downloadedPageLink, tempDirPath);
+    const downloadedPageContent = await fs.readFile(downloadedPageFilePath, 'utf-8')
+      .catch((err) => {
+        console.log(err);
+      });
 
-  const downloadedPageContent = await fs.readFile(downloadedPageFilePath, 'utf-8')
-    .catch((err) => {
-      console.log(err);
-    });
-
-  expect(testPageContent).toBe(downloadedPageContent);
-});
-
-test('without pathname in url', async () => {
-  const downloadedPageHost = 'https://hexlet.io';
-  const downloadedPagePath = '/';
-  const downloadedPageLink = `${downloadedPageHost}${downloadedPagePath}`;
-  const downloadedPageName = 'hexlet-io.html';
-  const downloadedPageFilePath = path.join(tempDirPath, downloadedPageName);
-
-  const testPageContent = await fs.readFile(testPagePath, 'utf-8');
-
-  nock(downloadedPageHost)
-    .get(downloadedPagePath)
-    .reply(200, testPageContent);
-
-  await downloadPage(downloadedPageLink, tempDirPath);
-
-  const downloadedPageContent = await fs.readFile(downloadedPageFilePath, 'utf-8')
-    .catch((err) => {
-      console.log(err);
-    });
-
-  expect(testPageContent).toBe(downloadedPageContent);
-});
-
-test('with pathname and querystring in url', async () => {
-  const downloadedPageHost = 'https://yandex.ru';
-  const downloadedPagePath = '/search/?text=node.js';
-  const downloadedPageLink = `${downloadedPageHost}${downloadedPagePath}`;
-  const downloadedPageName = 'yandex-ru-search-text-node-js.html';
-  const downloadedPageFilePath = path.join(tempDirPath, downloadedPageName);
-
-  const testPageContent = await fs.readFile(testPagePath, 'utf-8');
-
-  nock(downloadedPageHost)
-    .get(downloadedPagePath)
-    .reply(200, testPageContent);
-
-  await downloadPage(downloadedPageLink, tempDirPath);
-
-  const downloadedPageContent = await fs.readFile(downloadedPageFilePath, 'utf-8')
-    .catch((err) => {
-      console.log(err);
-    });
-
-  expect(testPageContent).toBe(downloadedPageContent);
-});
+    expect(testPageContent).toBe(downloadedPageContent);
+  },
+);
