@@ -24,12 +24,10 @@ const linkToName = (link) => {
   return `${name}.html`;
 };
 
-export default (link, filepath) => {
-  return axios.get(link)
-    .then((response) => {
-      const fullpath = path.join(filepath, linkToName(link));
+export default (link, filepath) => axios.get(link)
+  .then((response) => {
+    const fullpath = path.join(filepath, linkToName(link));
 
-      return fs.writeFile(fullpath, response.data);
-    })
-    .catch((err) => console.log(err));
-};
+    return fs.writeFile(fullpath, response.data);
+  })
+  .catch((err) => console.log(err));
