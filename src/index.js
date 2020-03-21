@@ -3,6 +3,26 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import cheerio from 'cheerio';
 import { URL } from 'url';
+import debug from 'debug';
+import axiosDebug from 'axios-debug-log';
+
+const pageLoaderDbg = debug('page-loader:main');
+const axiosDbg = debug('page-loader:http');
+
+axiosDebug.addLogger(axios, axiosDbg);
+
+axiosDebug({
+  request: (dbg, config) => {
+    dbg(`Request to ${config.url}`);
+  },
+  response: (dbg, response) => {
+    const headers = response.headers['content-type'];
+    dbg(`Response with ${headers} from ${response.config.url}`);
+  },
+  error: (dbg, error) => {
+    dbg('Boom', error);
+  },
+});
 
 const tagToAttr = {
   script: 'src',
@@ -62,7 +82,11 @@ export default (pageLink, destDirPath) => {
   let html;
 
   return fs.mkdir(dirPath)
-    .then(() => axios.get(pageUrl.toString()))
+    .then(() => {
+      pageLoaderDbg(`${dirPath} was created`);
+
+      return axios.get(pageUrl.toString());
+    })
     .then((response) => {
       html = response.data;
 
@@ -83,6 +107,7 @@ export default (pageLink, destDirPath) => {
         fileNames.push(fileName);
 
         const filepath = path.join(dirPath, fileName);
+        pageLoaderDbg(`${filepath} was created`);
 
         return fs.writeFile(filepath, data);
       });
@@ -114,8 +139,8 @@ export default (pageLink, destDirPath) => {
 
       const pageName = urlToName(pageUrl);
       const fullFilePath = path.join(destDirPath, pageName);
+      pageLoaderDbg(`Page was downloaded as '${pageName}'`);
 
       return fs.writeFile(fullFilePath, $.html());
-    })
-    .catch(console.log);
+    });
 };
