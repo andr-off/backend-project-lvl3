@@ -20,6 +20,9 @@ test:
 watch:
 	npx jest --watch .
 
+debug:
+	DEBUG=page-loader:* npm test
+
 test-coverage:
 	npm test -- --coverage
 
