@@ -49,7 +49,8 @@ test('should work', async () => {
     .get(cssPath)
     .replyWithFile(200, expectedCssFilePath, { 'Content-Type': 'text/css' })
     .get(jsPath)
-    .replyWithFile(200, expectedJsFilePath, { 'Content-Type': 'text/javascript' });
+    .replyWithFile(200, expectedJsFilePath, { 'Content-Type': 'text/javascript' })
+    .log(console.log);
 
   await downloadPage(downloadedPageLink, tempDirPath);
 
