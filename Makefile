@@ -1,9 +1,6 @@
 install:
 	npm install
 
-start:
-	npm run babel-node -- dist/bin/page-loader.js
-
 publish:
 	npm publish --dry-run
 
@@ -18,7 +15,7 @@ test:
 	npm test
 
 watch:
-	npx jest --watch .
+	npx jest --watch
 
 debug:
 	DEBUG=page-loader:* npm test
