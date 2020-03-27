@@ -13,7 +13,11 @@ const main = () => {
     .option('--output [type]', 'path to directory', process.cwd())
     .arguments('<link>')
     .action((link) => {
-      downloadPage(link, program.output);
+      downloadPage(link, program.output)
+        .catch((err) => {
+          console.error(err.message);
+          process.exit(1);
+        });
     });
 
   program.parse(process.argv);

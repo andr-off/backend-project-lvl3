@@ -1,27 +1,26 @@
 import axios from 'axios';
-import { promises as fs } from 'fs';
+import { promises as fs, constants } from 'fs';
 import path from 'path';
 import cheerio from 'cheerio';
 import { URL } from 'url';
-import debug from 'debug';
 import axiosDebug from 'axios-debug-log';
+import debug from 'debug';
 
 const pageLoaderDbg = debug('page-loader:main');
 const axiosDbg = debug('page-loader:http');
+const errorDbg = debug('page-loader:error');
 
 axiosDebug.addLogger(axios, axiosDbg);
 
 axiosDebug({
   request: (dbg, config) => {
-    dbg(`Request to ${config.url}`);
+    dbg(`Request to '${config.url}'`);
   },
   response: (dbg, response) => {
     const headers = response.headers['content-type'];
-    dbg(`Response with ${headers} from ${response.config.url}`);
+    dbg(`Response with '${headers}' from '${response.config.url}'`);
   },
-  error: (dbg, error) => {
-    dbg('Boom', error);
-  },
+  error: () => {},
 });
 
 const tagToAttr = {
@@ -30,9 +29,8 @@ const tagToAttr = {
   img: 'src',
 };
 
-const getLinksFromHTML = (html) => {
+const getLinksFromHTML = (html, selectors) => {
   const $ = cheerio.load(html);
-  const selectors = ['script[src]', 'link[href]', 'img[src]'];
 
   const nodes = selectors
     .reduce((acc, selector) => acc.concat($(selector).toArray()), []);
@@ -73,27 +71,60 @@ const urlToName = (urlObj, isDir = false) => {
   return ext === '' ? `${name}.html` : `${name}${ext}`;
 };
 
+const isEmpty = (collection) => collection.length === 0;
+
+const changeUrlsToPaths = (html, selectors, urlObjs, paths) => {
+  const $ = cheerio.load(html);
+
+  const nodes = selectors
+    .reduce((acc, selector) => acc.concat($(selector).toArray()), []);
+
+  const urls = urlObjs.map(({ pathname }) => pathname);
+
+  const withLocalLinkNodes = nodes.filter((node) => {
+    const attr = tagToAttr[node.tagName];
+    const link = $(node).attr(attr);
+
+    return urls.includes(link);
+  });
+
+  withLocalLinkNodes.forEach((node, i) => {
+    const attr = tagToAttr[node.tagName];
+    $(node).attr(attr, paths[i]);
+  });
+
+  return $.html();
+};
+
 export default (pageLink, destDirPath) => {
   const pageUrl = new URL(pageLink);
   const dirName = urlToName(pageUrl, true);
   const dirPath = path.join(destDirPath, dirName);
+
+  const tags = ['script[src]', 'link[href]', 'img[src]'];
   const fileNames = [];
   let localUrls;
   let html;
+  let contents;
 
-  return fs.mkdir(dirPath)
-    .then(() => {
-      pageLoaderDbg(`${dirPath} was created`);
+  return fs.access(destDirPath, constants.W_OK)
+    .then(() => fs.stat(destDirPath))
+    .then((stats) => {
+      if (stats.isFile()) {
+        const message = `ENOTDIR: not a directory, '${destDirPath}'`;
 
-      return axios.get(pageUrl.toString());
+        throw new Error(message);
+      }
     })
+    .then(() => axios.get(pageUrl.toString()))
     .then((response) => {
       html = response.data;
 
-      const links = getLinksFromHTML(html);
+      const links = getLinksFromHTML(html, tags);
       const urls = links.map((link) => new URL(link, pageUrl.origin));
 
       localUrls = urls.filter((url) => url.origin === pageUrl.origin);
+
 
       const responseConfig = { responseType: 'arraybuffer' };
       const promises = localUrls.map((url) => axios.get(url.toString(), responseConfig));
@@ -101,13 +132,28 @@ export default (pageLink, destDirPath) => {
       return Promise.all(promises);
     })
     .then((responses) => {
-      const promises = responses.map(({ data }, i) => {
+      contents = responses;
+
+      if (isEmpty(contents)) {
+        return Promise.resolve();
+      }
+
+      return fs.mkdir(dirPath);
+    })
+    .then(() => {
+      if (isEmpty(contents)) {
+        return Promise.resolve();
+      }
+
+      pageLoaderDbg(`'${dirPath}' was created`);
+
+      const promises = contents.map(({ data }, i) => {
         const fileName = urlToName(localUrls[i]);
 
         fileNames.push(fileName);
 
         const filepath = path.join(dirPath, fileName);
-        pageLoaderDbg(`${filepath} was created`);
+        pageLoaderDbg(`'${filepath}' was created`);
 
         return fs.writeFile(filepath, data);
       });
@@ -115,32 +161,21 @@ export default (pageLink, destDirPath) => {
       return Promise.all(promises);
     })
     .then(() => {
-      const selectors = ['script[src]', 'link[href]', 'img[src]'];
-      const $ = cheerio.load(html);
+      const names = localUrls.map((url) => urlToName(url));
+      const paths = names.map((name) => path.join(dirName, name));
 
-      const nodes = selectors
-        .reduce((acc, selector) => acc.concat($(selector).toArray()), []);
-
-      const paths = localUrls.map((url) => url.pathname);
-
-      const withLocalLinkNodes = nodes.filter((node) => {
-        const attr = tagToAttr[node.tagName];
-        const link = $(node).attr(attr);
-
-        return paths.includes(link);
-      });
-
-      withLocalLinkNodes.forEach((node, i) => {
-        const fileName = fileNames[i];
-        const filePath = path.join(dirName, fileName);
-        const attr = tagToAttr[node.tagName];
-        $(node).attr(attr, filePath);
-      });
+      const result = changeUrlsToPaths(html, tags, localUrls, paths);
 
       const pageName = urlToName(pageUrl);
       const fullFilePath = path.join(destDirPath, pageName);
+
       pageLoaderDbg(`Page was downloaded as '${pageName}'`);
 
-      return fs.writeFile(fullFilePath, $.html());
+      return fs.writeFile(fullFilePath, result);
+    })
+    .catch((err) => {
+      errorDbg(err.message);
+
+      throw err;
     });
 };
