@@ -4,6 +4,8 @@
 [![Maintainability](https://api.codeclimate.com/v1/badges/dd9d66257676f61fc43a/maintainability)](https://codeclimate.com/github/andr-off/backend-project-lvl3/maintainability)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/dd9d66257676f61fc43a/test_coverage)](https://codeclimate.com/github/andr-off/backend-project-lvl3/test_coverage)
 
+[asciinema step 4](https://asciinema.org/a/0aMHGtCInGiztIQP3002cFbl8)
+
 [asciinema step 3](https://asciinema.org/a/JLhr8xPrLaxs7oZFq4F8AynAc)
 
 [asciinema step 2](https://asciinema.org/a/YMnzpkCNZd2vVBdkhbXUYMCpA)
