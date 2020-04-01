@@ -5,6 +5,7 @@ import cheerio from 'cheerio';
 import { URL } from 'url';
 import axiosDebug from 'axios-debug-log';
 import debug from 'debug';
+import Listr from 'listr';
 
 const pageLoaderDbg = debug('page-loader:main');
 const axiosDbg = debug('page-loader:http');
@@ -73,6 +74,8 @@ const urlToName = (urlObj, isDir = false) => {
 
 const isEmpty = (collection) => collection.length === 0;
 
+const isAlreadyExistsError = (err) => err.code === 'EEXIST';
+
 const changeUrlsToPaths = (html, selectors, urlObjs, paths) => {
   const $ = cheerio.load(html);
 
@@ -96,16 +99,19 @@ const changeUrlsToPaths = (html, selectors, urlObjs, paths) => {
   return $.html();
 };
 
+const saveFile = (filepath, data) => fs.writeFile(filepath, data)
+  .then(() => {
+    pageLoaderDbg(`'${filepath}' was created`);
+  });
+
 export default (pageLink, destDirPath) => {
   const pageUrl = new URL(pageLink);
   const dirName = urlToName(pageUrl, true);
   const dirPath = path.join(destDirPath, dirName);
 
   const tags = ['script[src]', 'link[href]', 'img[src]'];
-  const fileNames = [];
+
   let localUrls;
-  let html;
-  let contents;
 
   return fs.access(destDirPath, constants.W_OK)
     .then(() => fs.stat(destDirPath))
@@ -118,60 +124,57 @@ export default (pageLink, destDirPath) => {
     })
     .then(() => axios.get(pageUrl.toString()))
     .then((response) => {
-      html = response.data;
+      const html = response.data;
 
-      const links = getLinksFromHTML(html, tags);
-      const urls = links.map((link) => new URL(link, pageUrl.origin));
+      localUrls = getLinksFromHTML(html, tags)
+        .map((link) => new URL(link, pageUrl.origin))
+        .filter((url) => url.origin === pageUrl.origin);
 
-      localUrls = urls.filter((url) => url.origin === pageUrl.origin);
+      const paths = localUrls
+        .map((url) => urlToName(url))
+        .map((name) => path.join(dirName, name));
 
+      const resultHtml = changeUrlsToPaths(html, tags, localUrls, paths);
+      const pageName = urlToName(pageUrl);
+      const fullFilePath = path.join(destDirPath, pageName);
 
-      const responseConfig = { responseType: 'arraybuffer' };
-      const promises = localUrls.map((url) => axios.get(url.toString(), responseConfig));
-
-      return Promise.all(promises);
+      return saveFile(fullFilePath, resultHtml);
     })
-    .then((responses) => {
-      contents = responses;
-
-      if (isEmpty(contents)) {
+    .then(() => {
+      if (isEmpty(localUrls)) {
         return Promise.resolve();
       }
 
       return fs.mkdir(dirPath);
     })
+    .catch((err) => {
+      if (isAlreadyExistsError(err)) {
+        return;
+      }
+
+      throw err;
+    })
     .then(() => {
-      if (isEmpty(contents)) {
+      if (isEmpty(localUrls)) {
         return Promise.resolve();
       }
 
       pageLoaderDbg(`'${dirPath}' was created`);
 
-      const promises = contents.map(({ data }, i) => {
-        const fileName = urlToName(localUrls[i]);
+      const tscs = localUrls.map((url) => ({
+        title: url.toString(),
+        task: () => axios.get(url.toString(), { responseType: 'arraybuffer' })
+          .then((data) => {
+            const fileName = urlToName(url);
+            const filepath = path.join(dirPath, fileName);
 
-        fileNames.push(fileName);
+            return saveFile(filepath, data);
+          }),
+      }));
 
-        const filepath = path.join(dirPath, fileName);
-        pageLoaderDbg(`'${filepath}' was created`);
+      const tasks = new Listr(tscs, { concurrent: true });
 
-        return fs.writeFile(filepath, data);
-      });
-
-      return Promise.all(promises);
-    })
-    .then(() => {
-      const names = localUrls.map((url) => urlToName(url));
-      const paths = names.map((name) => path.join(dirName, name));
-
-      const result = changeUrlsToPaths(html, tags, localUrls, paths);
-
-      const pageName = urlToName(pageUrl);
-      const fullFilePath = path.join(destDirPath, pageName);
-
-      pageLoaderDbg(`Page was downloaded as '${pageName}'`);
-
-      return fs.writeFile(fullFilePath, result);
+      return tasks.run();
     })
     .catch((err) => {
       errorDbg(err.message);
