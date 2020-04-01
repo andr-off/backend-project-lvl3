@@ -164,11 +164,11 @@ export default (pageLink, destDirPath) => {
       const tscs = localUrls.map((url) => ({
         title: url.toString(),
         task: () => axios.get(url.toString(), { responseType: 'arraybuffer' })
-          .then((data) => {
+          .then((response) => {
             const fileName = urlToName(url);
             const filepath = path.join(dirPath, fileName);
 
-            return saveFile(filepath, data);
+            return saveFile(filepath, response.data);
           }),
       }));
 
