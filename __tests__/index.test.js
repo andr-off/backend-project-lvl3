@@ -3,7 +3,6 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import nock from 'nock';
 import debug from 'debug';
-
 import downloadPage from '../src';
 
 nock.disableNetConnect();
@@ -11,10 +10,10 @@ nock.disableNetConnect();
 const getFixturePath = (name) => path.join(__dirname, '../__fixtures__', name);
 
 let tempDirPath;
-let htmlFilePath;
-let cssFilePath;
-let jsFilePath;
-let imgFilePath;
+let downloadedHtmlFilePath;
+let downloadedCssFilePath;
+let downloadedJsFilePath;
+let downloadedImgFilePath;
 
 const nockDbg = debug('page-loader:nock');
 
@@ -29,58 +28,56 @@ const testPageFilePath = getFixturePath('testPage.html');
 const downloadedPageName = 'ru-hexlet-io-courses.html';
 const expectedHtmlFilePath = getFixturePath('expected.html');
 
-const cssPath = '/css/style.css';
-const cssName = 'css-style.css';
-const expectedCssFilePath = getFixturePath(cssPath);
+const cssFilePath = '/css/style.css';
+const downloadedCssFileName = 'css-style.css';
+const expectedCssFilePath = getFixturePath(cssFilePath);
 
-const jsPath = '/js/script.js';
-const jsName = 'js-script.js';
-const expectedJsFilePath = getFixturePath(jsPath);
+const jsFilePath = '/js/script.js';
+const downloadedJsFileName = 'js-script.js';
+const expectedJsFilePath = getFixturePath(jsFilePath);
 
-const imgPath = '/images/logo.jpeg';
-const imgName = 'images-logo.jpeg';
-const expectedImgFilePath = getFixturePath(imgPath);
+const imgFilePath = '/images/logo.jpeg';
+const downloadedImgFileName = 'images-logo.jpeg';
+const expectedImgFilePath = getFixturePath(imgFilePath);
 
 beforeEach(async () => {
   tempDirPath = await fs.mkdtemp(path.join(os.tmpdir(), 'page-loader-'));
-  htmlFilePath = path.join(tempDirPath, downloadedPageName);
-  cssFilePath = path.join(tempDirPath, dirName, cssName);
-  jsFilePath = path.join(tempDirPath, dirName, jsName);
-  imgFilePath = path.join(tempDirPath, dirName, imgName);
-
-  // nock.cleanAll();
+  downloadedHtmlFilePath = path.join(tempDirPath, downloadedPageName);
+  downloadedCssFilePath = path.join(tempDirPath, dirName, downloadedCssFileName);
+  downloadedJsFilePath = path.join(tempDirPath, dirName, downloadedJsFileName);
+  downloadedImgFilePath = path.join(tempDirPath, dirName, downloadedImgFileName);
 });
 
 test('should work', async () => {
   nock(downloadedPageHost)
     .get(downloadedPagePath)
     .replyWithFile(200, testPageFilePath, { 'Content-Type': 'text/html' })
-    .get(imgPath)
+    .get(imgFilePath)
     .replyWithFile(200, expectedImgFilePath, { 'Content-Type': 'image/jpeg' })
-    .get(cssPath)
+    .get(cssFilePath)
     .replyWithFile(200, expectedCssFilePath, { 'Content-Type': 'text/css' })
-    .get(jsPath)
+    .get(jsFilePath)
     .replyWithFile(200, expectedJsFilePath, { 'Content-Type': 'text/javascript' })
     .log(nockDbg);
 
   await downloadPage(downloadedPageLink, tempDirPath);
 
   const expectedHtml = await fs.readFile(expectedHtmlFilePath, 'utf-8');
-  const html = await fs.readFile(htmlFilePath, 'utf-8');
+  const downloadedHtml = await fs.readFile(downloadedHtmlFilePath, 'utf-8');
 
   const expectedCss = await fs.readFile(expectedCssFilePath, 'utf-8');
-  const css = await fs.readFile(cssFilePath, 'utf-8');
+  const downloadedCss = await fs.readFile(downloadedCssFilePath, 'utf-8');
 
   const expectedJs = await fs.readFile(expectedJsFilePath, 'utf-8');
-  const js = await fs.readFile(jsFilePath, 'utf-8');
+  const downloadedJs = await fs.readFile(downloadedJsFilePath, 'utf-8');
 
   const expectedImg = await fs.readFile(expectedImgFilePath);
-  const img = await fs.readFile(imgFilePath);
+  const downloadedImg = await fs.readFile(downloadedImgFilePath);
 
-  expect(html).toBe(expectedHtml.trimEnd());
-  expect(css).toBe(expectedCss);
-  expect(js).toBe(expectedJs);
-  expect(img).toStrictEqual(expectedImg);
+  expect(downloadedHtml).toBe(expectedHtml.trimEnd());
+  expect(downloadedCss).toBe(expectedCss);
+  expect(downloadedJs).toBe(expectedJs);
+  expect(downloadedImg).toStrictEqual(expectedImg);
 });
 
 const fsErrorCases = [
@@ -115,11 +112,11 @@ const requestErrorCases = [
       nock(downloadedPageHost)
         .get(downloadedPagePath)
         .replyWithFile(200, testPageFilePath, { 'Content-Type': 'text/html' })
-        .get(imgPath)
+        .get(imgFilePath)
         .replyWithFile(200, expectedImgFilePath, { 'Content-Type': 'image/jpeg' })
-        .get(cssPath)
+        .get(cssFilePath)
         .reply(404)
-        .get(jsPath)
+        .get(jsFilePath)
         .replyWithFile(200, expectedJsFilePath, { 'Content-Type': 'text/javascript' })
         .log(nockDbg);
     },
