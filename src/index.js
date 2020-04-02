@@ -34,11 +34,13 @@ const getLinksFromHTML = (html, selectors) => {
   const $ = cheerio.load(html);
 
   const nodes = selectors
-    .reduce((acc, selector) => acc.concat($(selector).toArray()), []);
+    .reduce((acc, selector) => {
+      const selectedNodes = $(selector).toArray();
+      return acc.concat(selectedNodes);
+    }, []);
 
   const links = nodes.map((node) => {
     const attr = tagToAttr[node.tagName];
-
     return $(node).attr(attr);
   });
 
@@ -76,22 +78,24 @@ const isEmpty = (collection) => collection.length === 0;
 
 const isAlreadyExistsError = (err) => err.code === 'EEXIST';
 
-const changeUrlsToPaths = (html, selectors, urlObjs, paths) => {
+const changeUrlsToPaths = (html, selectors, urls, paths) => {
   const $ = cheerio.load(html);
 
   const nodes = selectors
-    .reduce((acc, selector) => acc.concat($(selector).toArray()), []);
+    .reduce((acc, selector) => {
+      const selectedNodes = $(selector).toArray();
+      return acc.concat(selectedNodes);
+    }, []);
 
-  const urls = urlObjs.map(({ pathname }) => pathname);
 
-  const withLocalLinkNodes = nodes.filter((node) => {
+  const withExpectedUrlNodes = nodes.filter((node) => {
     const attr = tagToAttr[node.tagName];
     const link = $(node).attr(attr);
 
     return urls.includes(link);
   });
 
-  withLocalLinkNodes.forEach((node, i) => {
+  withExpectedUrlNodes.forEach((node, i) => {
     const attr = tagToAttr[node.tagName];
     $(node).attr(attr, paths[i]);
   });
@@ -130,11 +134,13 @@ export default (pageLink, destDirPath) => {
         .map((link) => new URL(link, pageUrl.origin))
         .filter((url) => url.origin === pageUrl.origin);
 
-      const paths = localUrls
+      const localPaths = localUrls
         .map((url) => urlToName(url))
         .map((name) => path.join(dirName, name));
 
-      const resultHtml = changeUrlsToPaths(html, tags, localUrls, paths);
+      const urlPaths = localUrls.map(({ pathname }) => pathname);
+
+      const resultHtml = changeUrlsToPaths(html, tags, urlPaths, localPaths);
       const pageName = urlToName(pageUrl);
       const fullFilePath = path.join(destDirPath, pageName);
 
@@ -161,20 +167,19 @@ export default (pageLink, destDirPath) => {
 
       pageLoaderDbg(`'${dirPath}' was created`);
 
-      const tscs = localUrls.map((url) => ({
+      const tasks = localUrls.map((url) => ({
         title: url.toString(),
         task: () => axios.get(url.toString(), { responseType: 'arraybuffer' })
           .then((response) => {
             const fileName = urlToName(url);
             const filepath = path.join(dirPath, fileName);
-
             return saveFile(filepath, response.data);
           }),
       }));
 
-      const tasks = new Listr(tscs, { concurrent: true });
+      const list = new Listr(tasks, { concurrent: true });
 
-      return tasks.run();
+      return list.run();
     })
     .catch((err) => {
       errorDbg(err.message);
