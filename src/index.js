@@ -1,11 +1,12 @@
 import axios from 'axios';
-import { promises as fs, constants } from 'fs';
+import { promises as fs } from 'fs';
 import path from 'path';
 import cheerio from 'cheerio';
 import { URL } from 'url';
 import axiosDebug from 'axios-debug-log';
 import debug from 'debug';
 import Listr from 'listr';
+import _ from 'lodash';
 
 const pageLoaderDbg = debug('page-loader:main');
 const axiosDbg = debug('page-loader:http');
@@ -23,10 +24,7 @@ const getLinksFromHTML = (html, selectors) => {
   const $ = cheerio.load(html);
 
   const nodes = selectors
-    .reduce((acc, selector) => {
-      const selectedNodes = $(selector).toArray();
-      return acc.concat(selectedNodes);
-    }, []);
+    .flatMap((selector) => $(selector).toArray());
 
   const links = nodes.map((node) => {
     const attr = tagToAttr[node.tagName];
@@ -50,20 +48,22 @@ const normalizeLink = (urlObj) => {
   return path.join(dir, name).slice(1);
 };
 
-const urlToName = (urlObj, isDir = false) => {
+const replaceNonAlphaNumericSymbolsForDashes = (str) => str.replace(/[^a-zA-Z0-9]/g, '-');
+
+const urlToName = (urlObj) => {
   const normalizedLink = normalizeLink(urlObj);
   const { ext } = path.parse(urlObj.pathname);
-
-  const name = normalizedLink.replace(/[^a-zA-Z0-9]/g, '-');
-
-  if (isDir) {
-    return `${name}_files`;
-  }
+  const name = replaceNonAlphaNumericSymbolsForDashes(normalizedLink);
 
   return ext === '' ? `${name}.html` : `${name}${ext}`;
 };
 
-const isEmpty = (collection) => collection.length === 0;
+const urlToDirName = (urlObj) => {
+  const normalizedLink = normalizeLink(urlObj);
+  const name = replaceNonAlphaNumericSymbolsForDashes(normalizedLink);
+
+  return `${name}_files`;
+};
 
 const isAlreadyExistsError = (err) => err.code === 'EEXIST';
 
@@ -71,10 +71,7 @@ const changeUrlsToPaths = (html, selectors, urls, paths) => {
   const $ = cheerio.load(html);
 
   const nodes = selectors
-    .reduce((acc, selector) => {
-      const selectedNodes = $(selector).toArray();
-      return acc.concat(selectedNodes);
-    }, []);
+    .flatMap((selector) => $(selector).toArray());
 
 
   const withExpectedUrlNodes = nodes.filter((node) => {
@@ -99,32 +96,25 @@ const saveFile = (filepath, data) => fs.writeFile(filepath, data)
 
 export default (pageLink, destDirPath) => {
   const pageUrl = new URL(pageLink);
-  const dirName = urlToName(pageUrl, true);
+  const dirName = urlToDirName(pageUrl, true);
   const dirPath = path.join(destDirPath, dirName);
 
-  const tags = ['script[src]', 'link[href]', 'img[src]'];
+  const tags = Object
+    .entries(tagToAttr)
+    .map(([tagName, attribute]) => `${tagName}[${attribute}]`);
 
   let localUrls;
 
-  return fs.access(destDirPath, constants.W_OK)
-    .then(() => fs.stat(destDirPath))
-    .then((stats) => {
-      if (stats.isFile()) {
-        const message = `ENOTDIR: not a directory, '${destDirPath}'`;
-
-        throw new Error(message);
-      }
-    })
-    .then(() => axios.get(pageUrl.toString()))
-    .then((response) => {
-      const html = response.data;
+  return axios.get(pageUrl.toString())
+    .then(({ data }) => {
+      const html = data;
 
       localUrls = getLinksFromHTML(html, tags)
         .map((link) => new URL(link, pageUrl.origin))
         .filter((url) => url.origin === pageUrl.origin);
 
       const localPaths = localUrls
-        .map((url) => urlToName(url))
+        .map(urlToName)
         .map((name) => path.join(dirName, name));
 
       const urlPaths = localUrls.map(({ pathname }) => pathname);
@@ -136,21 +126,14 @@ export default (pageLink, destDirPath) => {
       return saveFile(fullFilePath, resultHtml);
     })
     .then(() => {
-      if (isEmpty(localUrls)) {
+      if (_.isEmpty(localUrls)) {
         return Promise.resolve();
       }
 
       return fs.mkdir(dirPath);
     })
-    .catch((err) => {
-      if (isAlreadyExistsError(err)) {
-        return;
-      }
-
-      throw err;
-    })
     .then(() => {
-      if (isEmpty(localUrls)) {
+      if (_.isEmpty(localUrls)) {
         return Promise.resolve();
       }
 
@@ -171,6 +154,10 @@ export default (pageLink, destDirPath) => {
       return list.run();
     })
     .catch((err) => {
+      if (isAlreadyExistsError(err)) {
+        throw new Error('It seems like the page was downloaded');
+      }
+
       errorDbg(err.message);
 
       throw err;

@@ -46,6 +46,8 @@ beforeEach(async () => {
   downloadedCssFilePath = path.join(tempDirPath, dirName, downloadedCssFileName);
   downloadedJsFilePath = path.join(tempDirPath, dirName, downloadedJsFileName);
   downloadedImgFilePath = path.join(tempDirPath, dirName, downloadedImgFileName);
+
+  nock.cleanAll();
 });
 
 test('should work', async () => {
@@ -101,6 +103,11 @@ const fsErrorCases = [
 test.each(fsErrorCases)(
   '%s',
   async (testName, dirpath, errorMessage) => {
+    nock(downloadedPageHost)
+      .get(downloadedPagePath)
+      .replyWithFile(200, testPageFilePath, { 'Content-Type': 'text/html' })
+      .log(nockDbg);
+
     await expect(downloadPage(downloadedPageLink, dirpath)).rejects.toThrow(errorMessage);
   },
 );
