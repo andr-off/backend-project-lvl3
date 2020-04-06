@@ -13,17 +13,6 @@ const errorDbg = debug('page-loader:error');
 
 axiosDebug.addLogger(axios, axiosDbg);
 
-axiosDebug({
-  request: (dbg, config) => {
-    dbg(`Request to '${config.url}'`);
-  },
-  response: (dbg, response) => {
-    const headers = response.headers['content-type'];
-    dbg(`Response with '${headers}' from '${response.config.url}'`);
-  },
-  error: () => {},
-});
-
 const tagToAttr = {
   script: 'src',
   link: 'href',
