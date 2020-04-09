@@ -20,20 +20,6 @@ const tagToAttr = {
   img: 'src',
 };
 
-const getLinksFromHTML = (html, selectors) => {
-  const $ = cheerio.load(html);
-
-  const nodes = selectors
-    .flatMap((selector) => $(selector).toArray());
-
-  const links = nodes.map((node) => {
-    const attr = tagToAttr[node.tagName];
-    return $(node).attr(attr);
-  });
-
-  return links;
-};
-
 const normalizeLink = (urlObj) => {
   const { hostname, pathname } = urlObj;
   const pathObj = path.parse(pathname);
@@ -42,13 +28,13 @@ const normalizeLink = (urlObj) => {
   if (ext === '') {
     const normalizedLink = `${hostname}${pathname}`;
 
-    return normalizedLink.endsWith('/') ? normalizedLink.slice(0, -1) : normalizedLink;
+    return _.trim(normalizedLink, '/');
   }
 
   return path.join(dir, name).slice(1);
 };
 
-const replaceNonAlphaNumericSymbolsForDashes = (str) => str.replace(/[^a-zA-Z0-9]/g, '-');
+const replaceNonAlphaNumericSymbolsForDashes = (str) => str.replace(/[\W]/g, '-');
 
 const urlToName = (urlObj) => {
   const normalizedLink = normalizeLink(urlObj);
@@ -67,26 +53,37 @@ const urlToDirName = (urlObj) => {
 
 const isAlreadyExistsError = (err) => err.code === 'EEXIST';
 
-const changeUrlsToPaths = (html, selectors, urls, paths) => {
+const getLocalLinksAndHtmlWithChangedLinks = (html, selectors, origin, pathToDirectory) => {
   const $ = cheerio.load(html);
 
-  const nodes = selectors
-    .flatMap((selector) => $(selector).toArray());
+  const nodesWithLocalLinks = selectors
+    .flatMap((selector) => $(selector).toArray())
+    .filter((node) => {
+      const attr = tagToAttr[node.tagName];
+      const link = $(node).attr(attr);
+      const url = new URL(link, origin);
 
+      return url.origin === origin;
+    });
 
-  const withExpectedUrlNodes = nodes.filter((node) => {
+  const localUrls = nodesWithLocalLinks
+    .map((node) => {
+      const attr = tagToAttr[node.tagName];
+
+      return $(node).attr(attr);
+    })
+    .map((link) => new URL(link, origin));
+
+  const localPaths = localUrls
+    .map(urlToName)
+    .map((name) => path.join(pathToDirectory, name));
+
+  nodesWithLocalLinks.forEach((node, i) => {
     const attr = tagToAttr[node.tagName];
-    const link = $(node).attr(attr);
-
-    return urls.includes(link);
+    $(node).attr(attr, localPaths[i]);
   });
 
-  withExpectedUrlNodes.forEach((node, i) => {
-    const attr = tagToAttr[node.tagName];
-    $(node).attr(attr, paths[i]);
-  });
-
-  return $.html();
+  return [localUrls, $.html()];
 };
 
 const saveFile = (filepath, data) => fs.writeFile(filepath, data)
@@ -109,17 +106,13 @@ export default (pageLink, destDirPath) => {
     .then(({ data }) => {
       const html = data;
 
-      localUrls = getLinksFromHTML(html, tags)
-        .map((link) => new URL(link, pageUrl.origin))
-        .filter((url) => url.origin === pageUrl.origin);
+      const [
+        urls,
+        resultHtml,
+      ] = getLocalLinksAndHtmlWithChangedLinks(html, tags, pageUrl.origin, dirName);
 
-      const localPaths = localUrls
-        .map(urlToName)
-        .map((name) => path.join(dirName, name));
+      localUrls = urls;
 
-      const urlPaths = localUrls.map(({ pathname }) => pathname);
-
-      const resultHtml = changeUrlsToPaths(html, tags, urlPaths, localPaths);
       const pageName = urlToName(pageUrl);
       const fullFilePath = path.join(destDirPath, pageName);
 
